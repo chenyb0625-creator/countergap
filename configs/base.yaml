@@ -1,0 +1,12 @@
+seed: 42
+cutoff: "2022-12-31"
+action_budget: 12
+top_k: 5
+
+scoring:
+  weights:
+    pre_cutoff_novelty: 0.25
+    evidence_quality: 0.25
+    counterevidence_robustness: 0.25
+    future_emergence: 0.15
+    reproducibility: 0.10

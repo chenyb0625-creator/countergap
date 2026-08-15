@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CounterGap 评审台</title>
+  <style>
+    :root { color-scheme: light; --ink:#12211f; --muted:#60706d; --line:#d9e2df; --bg:#f5f8f7; --card:#fff; --accent:#087f63; --accent-soft:#e2f4ed; --warn:#a64612; }
+    * { box-sizing: border-box; }
+    body { margin:0; font:15px/1.55 Inter, "Microsoft YaHei", system-ui, sans-serif; color:var(--ink); background:var(--bg); }
+    header { padding:42px max(24px, calc((100vw - 1120px)/2)); background:#0c2822; color:white; }
+    h1 { margin:0 0 8px; font-size:clamp(28px,4vw,42px); letter-spacing:-.04em; }
+    header p { margin:0; max-width:720px; color:#c7e4da; }
+    main { max-width:1120px; margin:0 auto; padding:28px 24px 64px; }
+    .notice { padding:13px 16px; border-left:4px solid var(--accent); background:var(--accent-soft); border-radius:5px; margin-bottom:24px; }
+    .grid { display:grid; grid-template-columns:1.05fr .95fr; gap:20px; align-items:start; }
+    section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:22px; box-shadow:0 2px 9px #153d3410; }
+    section + section { margin-top:20px; }
+    h2 { margin:0 0 14px; font-size:20px; letter-spacing:-.02em; }
+    h3 { font-size:14px; margin:18px 0 8px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
+    label { display:block; margin:12px 0 5px; font-weight:650; }
+    input, textarea, button { font:inherit; }
+    input[type=file], input[type=text], input[type=number], select, textarea { width:100%; border:1px solid #b9cbc6; border-radius:7px; padding:9px 10px; background:#fff; color:var(--ink); }
+    input:focus, select:focus, textarea:focus { outline:3px solid #bde9dc; border-color:var(--accent); }
+    textarea { min-height:90px; resize:vertical; }
+    .scores { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:10px 14px; }
+    .scores label { margin:0; font-size:13px; }
+    .scores input { margin-top:5px; }
+    button { border:0; border-radius:7px; padding:10px 14px; cursor:pointer; font-weight:700; background:var(--accent); color:white; }
+    button:hover { background:#066a53; }
+    button.secondary { background:#e7eeeb; color:#1a332d; }
+    button.secondary:hover { background:#d8e4df; }
+    .actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:18px; }
+    .empty { color:var(--muted); margin:0; }
+    .meta { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin:0; }
+    .meta div { padding:10px; background:#f6f9f8; border-radius:7px; }
+    .meta dt { font-size:12px; color:var(--muted); }
+    .meta dd { margin:2px 0 0; font-weight:650; overflow-wrap:anywhere; }
+    .event { border-top:1px solid var(--line); padding:12px 0; }
+    .event:first-child { border-top:0; }
+    .event-top { display:flex; gap:8px; align-items:center; }
+    .pill { display:inline-block; border-radius:999px; padding:2px 8px; font:700 12px/1.45 ui-monospace, monospace; background:#edf3f1; color:#2c4e45; }
+    .doc { display:inline-block; margin:5px 4px 0 0; padding:2px 7px; background:#e2f4ed; border-radius:4px; font:12px ui-monospace, monospace; }
+    .detail { margin:5px 0 0; color:#41534e; overflow-wrap:anywhere; }
+    .error { margin:12px 0 0; color:var(--warn); font-weight:650; }
+    .preview { width:100%; min-height:160px; margin-top:15px; font:12px/1.45 ui-monospace, Consolas, monospace; }
+    .small { color:var(--muted); font-size:13px; margin:5px 0 0; }
+    details { margin-top:14px; padding:10px; background:#f6f9f8; border-radius:7px; }
+    summary { cursor:pointer; font-weight:650; }
+    @media (max-width:760px) { .grid { grid-template-columns:1fr; } .scores { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>CounterGap 评审台</h1>
+    <p>加载一次已完成的探索 trace，核查证据与反证行为，填写离线评分，并导出可直接提交的评审 JSON。</p>
+  </header>
+  <main>
+    <div class="notice">此页面完全在本机浏览器中运行，不上传文献或评分。未来文献只能填写在离线评审字段中，不会回流到 agent 运行。</div>
+    <div class="grid">
+      <div>
+        <section>
+          <h2>1. 加载运行 trace</h2>
+          <input id="traceFile" type="file" accept=".jsonl,application/json">
+          <p class="small">选择 <code>outputs/demo_*_trace.jsonl</code> 中的一个文件。</p>
+          <p id="traceError" class="error" hidden></p>
+        </section>
+        <section>
+          <h2>运行摘要</h2>
+          <div id="summary"><p class="empty">尚未加载 trace。</p></div>
+          <h3>行动与暴露证据</h3>
+          <div id="timeline"><p class="empty">加载后会显示查询、读取文献、假设修订与停止原因。</p></div>
+        </section>
+      </div>
+      <div>
+        <section>
+          <h2>2. 填写人工评审</h2>
+          <label for="evaluator">评审者标识</label>
+          <input id="evaluator" type="text" placeholder="例如：reviewer-01">
+          <div class="scores">
+            <label>Pre-cutoff novelty <input id="novelty" type="number" min="0" max="1" step="0.01" placeholder="0–1"></label>
+            <label>Evidence quality <input id="quality" type="number" min="0" max="1" step="0.01" placeholder="0–1"></label>
+            <label>Counterevidence robustness <input id="robustness" type="number" min="0" max="1" step="0.01" placeholder="0–1"></label>
+            <label>Future emergence
+              <select id="futureStatus">
+                <option value="not_evaluated">Not evaluated</option>
+                <option value="evaluated_positive">Evaluated: positive</option>
+                <option value="evaluated_negative">Evaluated: negative</option>
+                <option value="uncertain">Evaluated: uncertain</option>
+                <option value="not_applicable">Not applicable</option>
+              </select>
+              <input id="future" type="number" min="0" max="1" step="0.01" placeholder="0–1；未评审时留空">
+            </label>
+            <label>Reproducibility <input id="reproducibility" type="number" min="0" max="1" step="0.01" placeholder="0–1"></label>
+          </div>
+          <details><summary>评分锚点（0 / 0.5 / 1）</summary>
+            <p class="small">Novelty：已被直接覆盖 / 覆盖不足或混合 / 经限定审计未见直接覆盖。Quality：无直接依据 / 有限直接依据 / 多份直接且多样来源。Robustness：未作或无视反证 / 局部处理 / 主动反查后合理保留、修订或撤回。Future：已评估窗口无相关后续工作 / 间接相关 / 独立后续关注。Reproducibility：无法复跑 / 部分可复跑 / 相同语料、cutoff、seed、方法可复跑。</p>
+          </details>
+          <label for="futureNote">Future emergence 说明</label>
+          <input id="futureNote" type="text" placeholder="未评审或不适用时必须说明原因">
+          <h3>证据语义（不会自动把检索结果当作支持证据）</h3>
+          <label for="retrievedEvidence">Retrieved document IDs（trace 自动汇总）</label>
+          <input id="retrievedEvidence" type="text" readonly>
+          <label for="readEvidence">Read document IDs（trace 自动汇总）</label>
+          <input id="readEvidence" type="text" readonly>
+          <label for="preEvidence">Supporting evidence IDs（人工确认）</label>
+          <input id="preEvidence" type="text" placeholder="例如：d2">
+          <label for="counterEvidence">Counterevidence IDs</label>
+          <input id="counterEvidence" type="text" placeholder="例如：d4">
+          <label for="finalEvidence">Final claim evidence IDs（必须已读）</label>
+          <input id="finalEvidence" type="text" placeholder="若 verdict 不是验证候选 gap，通常留空">
+          <label for="futureEvidence">Future evidence IDs（仅离线佐证）</label>
+          <input id="futureEvidence" type="text" placeholder="例如：d5, d6；没有则留空">
+          <label for="notes">评审说明</label>
+          <textarea id="notes" placeholder="说明评分依据、检索覆盖、发现的反证或局限。"></textarea>
+          <label for="verdict">评审结论</label>
+          <select id="verdict">
+            <option value="insufficient_validation">INSUFFICIENT_VALIDATION</option>
+            <option value="validated_candidate_gap">VALIDATED_CANDIDATE_GAP</option>
+            <option value="no_validated_gap">NO_VALIDATED_GAP</option>
+            <option value="conflicting_evidence">CONFLICTING_EVIDENCE</option>
+            <option value="requires_human_review">REQUIRES_HUMAN_REVIEW</option>
+          </select>
+          <div class="actions">
+            <button id="export">导出评审 JSON</button>
+            <button id="copy" class="secondary">复制 JSON</button>
+          </div>
+          <p id="formError" class="error" hidden></p>
+          <textarea id="preview" class="preview" readonly placeholder="导出的 JSON 会显示在这里，可直接复制或作为附件发回给我。"></textarea>
+        </section>
+      </div>
+    </div>
+  </main>
+  <script>
+    const byId = (id) => document.getElementById(id);
+    const fields = ["novelty", "quality", "robustness", "reproducibility"];
+    let run = null;
+
+    function text(value) { return value == null ? "—" : String(value); }
+    function csv(value) {
+      return [...new Set(value.split(",").map((item) => item.trim()).filter(Boolean))];
+    }
+    function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
+    function addText(parent, tag, value, className) {
+      const element = document.createElement(tag);
+      element.textContent = value;
+      if (className) element.className = className;
+      parent.appendChild(element);
+      return element;
+    }
+    function showError(id, message) {
+      const node = byId(id);
+      node.hidden = !message;
+      node.textContent = message || "";
+    }
+    function actionDetail(action) {
+      const payload = action.payload || {};
+      if (payload.query) return "查询：" + payload.query;
+      if (payload.document_id) return "读取：" + payload.document_id;
+      if (payload.text) return "假设：" + payload.text;
+      if (payload.reason) return "原因：" + payload.reason;
+      return "";
+    }
+    function renderRun(records) {
+      const start = records.find((record) => record.record_type === "run_start");
+      const end = records.find((record) => record.record_type === "run_end");
+      const actions = records.filter((record) => record.record_type === "action");
+      if (!start || !end || !start.metadata || !start.run_id) throw new Error("文件不是完整的 CounterGap run trace。");
+      const retrievedIds = [...new Set(actions.flatMap((record) => (record.event || {}).exposed_document_ids || []))];
+      const readIds = [...new Set(actions.filter((record) => ((record.event || {}).action || {}).type === "read").map((record) => ((record.event || {}).action || {}).payload.document_id))];
+      run = { runId: start.run_id, metadata: start.metadata, end: end.summary || {}, actions, retrievedIds, readIds };
+
+      const summary = byId("summary"); clear(summary);
+      const meta = document.createElement("dl"); meta.className = "meta";
+      const remaining = Number(run.metadata.action_budget) - actions.length;
+      const latest = run.end.last_hypothesis || run.end.final_hypothesis;
+      const challenged = latest && latest.terminal_eligible === true;
+      run.remainingBudget = remaining;
+      run.finalHypothesisChallenged = challenged === true;
+      [["Run ID", run.runId], ["方法", run.metadata.method_name], ["Cutoff", run.metadata.cutoff], ["Seed", run.metadata.seed], ["语料版本", run.metadata.corpus_version], ["预算", run.metadata.action_budget + " total / " + actions.length + " used / " + remaining + " remaining"], ["终态", run.end.terminal_outcome || "legacy trace"], ["最终假设挑战", challenged ? "✓ 已挑战" : "⚠ 未挑战或旧格式 trace"], ["停止原因", run.end.stop_reason]].forEach(([key, value]) => {
+        const box = document.createElement("div"); addText(box, "dt", key); addText(box, "dd", text(value)); meta.appendChild(box);
+      });
+      summary.appendChild(meta);
+      if (run.end.final_hypothesis) {
+        addText(summary, "h3", "最终假设");
+        addText(summary, "p", run.end.final_hypothesis.text || "—");
+      }
+      if (latest) {
+        addText(summary, "h3", "Hypothesis lineage");
+        const lineage = (run.end.hypothesis_history || [latest]).map((hypothesis) => {
+          const counter = (hypothesis.counterevidence_ids || []).join(", ");
+          return hypothesis.hypothesis_id + " (r" + hypothesis.revision + ")" + (counter ? " ← counter: " + counter : "");
+        });
+        addText(summary, "p", lineage.join(" → ") + (challenged ? " → STOP" : " → ⚠ STOP before challenge"));
+      }
+      const saturation = run.end.stop_decision && run.end.stop_decision.search_saturation;
+      if (remaining > 0 && !(saturation && saturation.established)) {
+        addText(summary, "p", "⚠ 提前停止：预算仍有剩余，但 trace 没有记录已建立的搜索饱和依据。", "error");
+      }
+      if (run.end.revision_history && run.end.revision_history.length) {
+        addText(summary, "h3", "Revision records");
+        run.end.revision_history.forEach((revision) => {
+          addText(summary, "p", revision.from_hypothesis_id + " → " + revision.to_hypothesis_id + " / " + revision.revision_type + " / trigger: " + revision.trigger_document_ids.join(", "));
+        });
+      }
+
+      const timeline = byId("timeline"); clear(timeline);
+      actions.forEach((record) => {
+        const event = record.event || {}; const action = event.action || {};
+        const item = document.createElement("div"); item.className = "event";
+        const top = document.createElement("div"); top.className = "event-top";
+        addText(top, "span", "步骤 " + text(event.step), "pill");
+        addText(top, "span", text(action.type), "pill"); item.appendChild(top);
+        const detail = actionDetail(action); if (detail) addText(item, "p", detail, "detail");
+        const exposed = event.exposed_document_ids || [];
+        if (exposed.length) {
+          const docs = document.createElement("div"); addText(docs, "span", "暴露文献：", "small");
+          exposed.forEach((id) => addText(docs, "span", id, "doc")); item.appendChild(docs);
+        }
+        timeline.appendChild(item);
+      });
+      byId("retrievedEvidence").value = retrievedIds.join(", ");
+      byId("readEvidence").value = readIds.join(", ");
+      byId("preEvidence").value = "";
+      byId("counterEvidence").value = "";
+      byId("finalEvidence").value = "";
+      byId("preview").value = "";
+    }
+    byId("traceFile").addEventListener("change", async (event) => {
+      showError("traceError", ""); run = null;
+      const file = event.target.files[0]; if (!file) return;
+      try {
+        const records = (await file.text()).split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
+        renderRun(records);
+      } catch (error) { showError("traceError", "无法读取 trace：" + error.message); }
+    });
+    function buildAssessment() {
+      if (!run) throw new Error("请先加载一个已完成的 trace。");
+      const scores = {};
+      const names = { novelty:"pre_cutoff_novelty", quality:"evidence_quality", robustness:"counterevidence_robustness", reproducibility:"reproducibility" };
+      fields.forEach((field) => {
+        const value = Number(byId(field).value);
+        if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error("五项分数都必须填写 0 到 1 之间的数值。");
+        scores[names[field]] = value;
+      });
+      const futureStatus = byId("futureStatus").value;
+      const futureScore = byId("future").value;
+      const futureIsEvaluated = ["evaluated_positive", "evaluated_negative", "uncertain"].includes(futureStatus);
+      if (futureIsEvaluated) {
+        const value = Number(futureScore);
+        if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error("已评审的 Future emergence 必须填写 0 到 1 的分数。");
+        scores.future_emergence = value;
+      } else {
+        if (!byId("futureNote").value.trim()) throw new Error("Future emergence 未评审或不适用时必须说明原因。");
+        scores.future_emergence = null;
+      }
+      const evaluator = byId("evaluator").value.trim();
+      if (!evaluator) throw new Error("请填写评审者标识。");
+      const finalEvidence = csv(byId("finalEvidence").value);
+      if (!finalEvidence.every((id) => run.readIds.includes(id))) throw new Error("Final claim evidence 必须来自已读文献。");
+      const stopDecision = run.end.stop_decision || {};
+      return {
+        run_id: run.runId,
+        evaluator_id: evaluator,
+        rubric_version: "v2",
+        score_vector: scores,
+        future_emergence_status: futureStatus,
+        future_emergence_note: byId("futureNote").value.trim(),
+        evidence: {
+          retrieved_document_ids: run.retrievedIds,
+          read_document_ids: run.readIds,
+          supporting_evidence_ids: csv(byId("preEvidence").value),
+          counterevidence_ids: csv(byId("counterEvidence").value),
+          final_claim_evidence_ids: finalEvidence
+        },
+        future_evidence_ids: csv(byId("futureEvidence").value),
+        terminal_assessment: {
+          final_hypothesis_challenged: run.finalHypothesisChallenged,
+          search_saturation_established: Boolean(stopDecision.search_saturation && stopDecision.search_saturation.established),
+          premature_stop: run.remainingBudget > 0 && !(stopDecision.search_saturation && stopDecision.search_saturation.established),
+          remaining_budget: Math.max(0, run.remainingBudget)
+        },
+        verdict: byId("verdict").value,
+        notes: byId("notes").value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+      };
+    }
+    function prepareAssessment() {
+      showError("formError", "");
+      try {
+        const assessment = buildAssessment();
+        const json = JSON.stringify(assessment, null, 2);
+        byId("preview").value = json;
+        return { assessment, json };
+      } catch (error) { showError("formError", error.message); return null; }
+    }
+    byId("export").addEventListener("click", () => {
+      const prepared = prepareAssessment(); if (!prepared) return;
+      const blob = new Blob([prepared.json + "\n"], { type:"application/json" });
+      const link = document.createElement("a"); link.href = URL.createObjectURL(blob);
+      link.download = "assessment_" + run.runId + ".json"; link.click(); URL.revokeObjectURL(link.href);
+    });
+    byId("copy").addEventListener("click", async () => {
+      const prepared = prepareAssessment(); if (!prepared) return;
+      try { await navigator.clipboard.writeText(prepared.json); }
+      catch (_) { byId("preview").select(); document.execCommand("copy"); }
+    });
+    function syncFutureInput() {
+      const evaluated = ["evaluated_positive", "evaluated_negative", "uncertain"].includes(byId("futureStatus").value);
+      byId("future").disabled = !evaluated;
+      if (!evaluated) byId("future").value = "";
+    }
+    byId("futureStatus").addEventListener("change", syncFutureInput);
+    syncFutureInput();
+  </script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+name: "demo_ai_research"
+corpus_version: "demo-v1"
+corpus_path: "data/demo_corpus.jsonl"
+description: "Synthetic toy corpus used only to validate CounterGap environment semantics."
