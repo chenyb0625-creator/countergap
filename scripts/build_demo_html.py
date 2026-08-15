@@ -27,14 +27,14 @@ def load_jsonl(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def collect() -> dict:
-    corpus_path = ROOT / "data" / "demo_corpus.jsonl"
+def collect(tag: str = "demo", corpus_path: Path | None = None, cutoff_iso: str = "2022-12-31") -> dict:
+    corpus_path = corpus_path or ROOT / "data" / "demo_corpus.jsonl"
     docs = [
         Document.model_validate_json(line)
         for line in corpus_path.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-    cutoff = date(2022, 12, 31)
+    cutoff = date.fromisoformat(cutoff_iso)
     pre, post = temporal_split(docs, cutoff)
     pre_ids = {d.document_id for d in pre}
     corpus = [
@@ -50,13 +50,13 @@ def collect() -> dict:
     ]
 
     traces: dict[str, dict] = {}
-    for trace_path in sorted((ROOT / "outputs").glob("demo_*_trace.jsonl")):
+    for trace_path in sorted((ROOT / "outputs").glob(f"{tag}_*_trace.jsonl")):
         records = load_jsonl(trace_path)
         method = records[0]["metadata"]["method_name"]
         traces[method] = {"records": records, "path": trace_path.name}
 
     evaluations: dict[str, dict] = {}
-    for eval_path in sorted((ROOT / "outputs").glob("demo_*_trace.evaluation.jsonl")):
+    for eval_path in sorted((ROOT / "outputs").glob(f"{tag}_*_trace.evaluation.jsonl")):
         record = json.loads(eval_path.read_text(encoding="utf-8").splitlines()[0])
         method = record["run_id"].split("-")[1]
         evaluations[method] = {
@@ -133,20 +133,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
 <header>
   <h1>CounterGap — 研究缺口发现智能体的时间冻结评测环境</h1>
-  <p><span class="tag">toy corpus</span><span class="tag">cutoff {cutoff}</span>
-     <span class="tag">7 methods</span><span class="tag">DeepSeek LLM 可选</span></p>
+  <p><span class="tag">{corpus_tag}</span><span class="tag">cutoff {cutoff}</span>
+     <span class="tag">8 methods</span><span class="tag">DeepSeek LLM 可选</span></p>
   <p style="margin-top:10px">核心问题：在时间冻结的文献环境下，主动反证搜索能否减少虚假研究缺口主张？
      本 demo 展示管线、各方法轨迹与评分（自动 rubric，非人工评审）。</p>
 </header>
 
 <section>
-  <h2>1 · 冻结语料 <small>6 篇合成文档 · cutoff 2022-12-31 · 4 篇可见 / 2 篇隐藏</small></h2>
+  <h2>1 · 冻结语料 <small>{corpus_desc}</small></h2>
   <table>
     <tr><th>ID</th><th>标题</th><th>日期</th><th>状态</th></tr>
     {corpus_rows}
   </table>
-  <p style="color:var(--muted);font-size:12.5px;margin-bottom:0">
-    d5/d6 在 cutoff 之后，对智能体完全不可见 —— 这是本环境的"无时间泄漏"核心保证。</p>
 </section>
 
 <section>
@@ -160,16 +158,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <tr><th>方法</th><th>终态判定</th><th>novelty</th><th>evidence</th><th>robust</th><th>future</th><th>repro</th><th>aggregate</th></tr>
     {score_rows}
   </table>
-  <div class="note" style="margin-top:12px">
-    <b>解读注意</b>：只有交互式 LLM 智能体产出 <b>validated_candidate_gap</b>（提出主张 → 生成证伪查询 → 在冻结语料中搜索反证 → 判断主张存活 → 对最终假设再做支持+反证搜索后才停止）。
-    一次性 LLM 只能提出同样的主张却无法验证 —— 这正是本环境要暴露的对比。LLM 运行非确定性（单 seed 演示）；自动 rubric 对模糊表述的 novelty 打分偏高；future 列仅为自动化词重叠，不是 ground truth。</div>
+  <div class="note" style="margin-top:12px">{note_html}</div>
 </section>
 
 <section>
   <h2>4 · 示例探索轨迹 <small>llm_counter_search（DeepSeek 驱动）—— 完整可审计动作序列</small></h2>
   <div id="trace">{trace_steps}</div>
   <p style="color:var(--muted);font-size:12.5px;margin-bottom:0">
-    每步动作、查询、暴露文档均记录在 JSONL trace 中（outputs/demo_llm_counter_search_trace.jsonl），
+    每步动作、查询、暴露文档均记录在 JSONL trace 中（{trace_path}），
     可复核"反证搜索是否真实发生、主张是否基于已读证据"。</p>
 </section>
 
@@ -258,17 +254,30 @@ def trace_steps_html(records: list[dict]) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=ROOT / "demo.html")
+    parser.add_argument("--tag", default="demo", help="trace prefix (demo | real)")
+    parser.add_argument("--corpus", type=Path, default=None)
+    parser.add_argument("--cutoff", default="2022-12-31")
+    parser.add_argument("--title-suffix", default="玩具语料")
     args = parser.parse_args()
 
-    data = collect()
+    data = collect(tag=args.tag, corpus_path=args.corpus, cutoff_iso=args.cutoff)
     cutoff = data["cutoff"]
+    trace_label = args.tag
+    # For large real corpora, render a bounded preview of the corpus table.
+    corpus_preview = data["corpus"][:15]
+    corpus_hidden = len(data["corpus"]) - len(corpus_preview)
     corpus_rows = "".join(
-        f"<tr><td class='mono'>{d['id']}</td><td>{d['title']}<br>"
-        f"<span style='color:var(--muted);font-size:12px'>{d['abstract']}</span></td>"
+        f"<tr><td class='mono'>{d['id'][:38]}</td><td>{d['title'][:90]}<br>"
+        f"<span style='color:var(--muted);font-size:12px'>{d['abstract'][:160]}{'…' if len(d['abstract']) > 160 else ''}</span></td>"
         f"<td class='mono'>{d['date']}</td>"
         f"<td><span class='pill {('pre' if d['period'].startswith('pre') else 'post')}'>{d['period']}</span></td></tr>"
-        for d in data["corpus"]
+        for d in corpus_preview
     )
+    if corpus_hidden > 0:
+        corpus_rows += (
+            f"<tr><td colspan='4' style='color:var(--muted);font-size:12px'>"
+            f"… 另有 {corpus_hidden} 篇未在表格中展示（完整列表见语料 JSONL）</td></tr>"
+        )
 
     kinds = {
         "random": "随机基线",
@@ -320,8 +329,37 @@ def main() -> None:
 
     trace_steps = trace_steps_html(data["traces"]["llm_counter_search"]["records"])
 
+    is_real = args.tag == "real"
+    if is_real:
+        corpus_tag = "real corpus (OpenAlex CC0)"
+        note_html = (
+            "<b>解读注意</b>：在真实语料（326 篇，cutoff 2024-06-30）上，交互式 LLM 智能体"
+            "提出主张 → 生成证伪查询 → 找到 2 篇 pre-cutoff 已有文献 → <b>撤回主张</b>"
+            "（no_validated_gap，counterexample discovery，robustness=1.0）。"
+            "一次性 LLM 提出同类主张却无法验证。这是机制演示（单 seed），不代表统计结论；"
+            "LLM 运行非确定性；future 列仅为自动化词重叠，不是 ground truth。"
+        )
+    else:
+        corpus_tag = "toy corpus"
+        note_html = (
+            "<b>解读注意</b>：玩具语料上只有交互式 LLM 智能体产出 <b>validated_candidate_gap</b>"
+            "（提出主张 → 生成证伪查询 → 在冻结语料中搜索反证 → 判断主张存活 → 对最终假设再做"
+            "支持+反证搜索后才停止）。一次性 LLM 只能提出同样的主张却无法验证 —— 这正是本环境要"
+            "暴露的对比。LLM 运行非确定性（单 seed 演示）；自动 rubric 对模糊表述的 novelty 打分"
+            "偏高；future 列仅为自动化词重叠，不是 ground truth。"
+        )
+    corpus_desc = (
+        f"{len(data['corpus'])} 篇文档 · cutoff {cutoff} · "
+        f"{sum(1 for d in data['corpus'] if d['period'].startswith('pre'))} 篇可见 / "
+        f"{sum(1 for d in data['corpus'] if not d['period'].startswith('pre'))} 篇隐藏"
+    )
+
     html = HTML_TEMPLATE.format(
         cutoff=cutoff,
+        corpus_tag=corpus_tag,
+        corpus_desc=corpus_desc,
+        note_html=note_html,
+        trace_path=f"outputs/{args.tag}_llm_counter_search_trace.jsonl",
         corpus_rows=corpus_rows,
         method_cards=method_cards,
         score_rows=score_rows,

@@ -1,0 +1,12 @@
+{
+  "corpus_version": "llm_agent_eval_v1",
+  "domain": "llm_agent_eval",
+  "source": "OpenAlex REST API (CC0)",
+  "query": "title.search:language model agents,publication_year:2019-2025",
+  "fetched_at_utc": "2026-08-15T13:27:06.171569+00:00",
+  "works_seen": 400,
+  "documents_with_abstract": 326,
+  "api": "https://api.openalex.org/works",
+  "license_note": "OpenAlex data is CC0; abstracts reconstructed from abstract_inverted_index for scholarly reuse.",
+  "reproduce": "python scripts/build_real_corpus.py --limit 400"
+}

@@ -52,13 +52,16 @@ def main() -> None:
     parser.add_argument("--budget", type=int, default=16)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--cutoff", default="2022-12-31")
+    parser.add_argument("--corpus", type=Path, default=ROOT / "data" / "demo_corpus.jsonl")
+    parser.add_argument("--corpus-version", default="demo-v1")
+    parser.add_argument("--tag", default="demo", help="output filename prefix, e.g. 'real'")
     parser.add_argument("--skip-llm", action="store_true")
     args = parser.parse_args()
 
     cutoff = date.fromisoformat(args.cutoff)
-    corpus = ROOT / "data" / "demo_corpus.jsonl"
+    corpus = args.corpus
     if not corpus.exists():
-        raise SystemExit("Run: python scripts/build_demo_corpus.py")
+        raise SystemExit(f"Corpus not found: {corpus}")
     docs = load_docs(corpus)
     pre, post = temporal_split(docs, cutoff)
 
@@ -87,18 +90,18 @@ def main() -> None:
         backend = LocalFrozenCorpusBackend(docs, cutoff=cutoff)
         env = CounterGapEnv(backend=backend, cutoff=cutoff, action_budget=args.budget)
         method.run(env)
-        run_id = f"demo-{method_name}-seed-{args.seed}-cutoff-{cutoff.isoformat()}"
+        run_id = f"{args.tag}-{method_name}-seed-{args.seed}-cutoff-{cutoff.isoformat()}"
         out = write_run_trace(
             env,
             RunMetadata(
                 run_id=run_id,
                 seed=args.seed,
-                corpus_version="demo-v1",
+                corpus_version=args.corpus_version,
                 cutoff=cutoff,
                 method_name=method_name,
                 action_budget=args.budget,
             ),
-            ROOT / "outputs" / f"demo_{method_name}_trace.jsonl",
+            ROOT / "outputs" / f"{args.tag}_{method_name}_trace.jsonl",
         )
         runs[method_name] = {
             "terminal_outcome": env.terminal_outcome.value if env.terminal_outcome else None,

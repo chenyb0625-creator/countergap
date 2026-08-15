@@ -59,14 +59,15 @@ class EmbeddingBoundaryBaseline:
     def run(self, env: CounterGapEnv) -> None:
         read_docs: list[Document] = []
         for query in _QUERY_FAMILIES:
-            if env.remaining_budget < 2:
+            # Reserve 3 actions for propose + abandon + stop.
+            if env.remaining_budget <= 3:
                 break
             result = env.step(Action(
                 type=ActionType.SEARCH,
                 payload={"query": query, "k": 2},
             ))
-            for doc in result["results"][:2]:
-                if doc["document_id"] not in env.read_ids and env.remaining_budget > 1:
+            for doc in result["results"][:1]:
+                if doc["document_id"] not in env.read_ids and env.remaining_budget > 3:
                     env.step(Action(type=ActionType.READ, payload={"document_id": doc["document_id"]}))
                     read_docs.append(Document.model_validate(doc))
 
