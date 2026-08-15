@@ -9,3 +9,4 @@ build/
 outputs/*
 !outputs/.gitkeep
 data/demo_corpus.jsonl
+.workbuddy/

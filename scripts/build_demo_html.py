@@ -276,6 +276,7 @@ def main() -> None:
         "one_shot": "一次性启发式",
         "no_counter_search": "无反证搜索消融",
         "counter_search": "确定性反证搜索智能体",
+        "embedding_boundary": "嵌入边界基线（词袋代理）",
         "one_shot_llm": "一次性 LLM（DeepSeek）",
         "llm_counter_search": "交互式 LLM 反证搜索智能体（DeepSeek）",
     }
@@ -292,7 +293,7 @@ def main() -> None:
         }
 
     order = ["random", "keyword_trend", "one_shot", "no_counter_search", "counter_search",
-             "one_shot_llm", "llm_counter_search"]
+             "embedding_boundary", "one_shot_llm", "llm_counter_search"]
     method_cards = "".join(
         method_card(name, info_by_method[name], data["evaluations"].get(name)) for name in order
     )

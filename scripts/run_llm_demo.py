@@ -3,7 +3,7 @@
 Compares, on the same frozen toy corpus/cutoff/seed/budget:
 
     random, keyword_trend, one_shot, no_counter_search, counter_search,
-    one_shot_llm, llm_counter_search
+    embedding_boundary, one_shot_llm, llm_counter_search
 
 LLM methods require ``DEEPSEEK_API_KEY`` (from a gitignored ``.env`` file).
 Use ``--skip-llm`` to run only the deterministic methods.
@@ -26,6 +26,7 @@ from countergap.adapters.llm import DeepSeekClient, LLMError
 from countergap.agents.counter_search import CounterSearchAgent
 from countergap.agents.llm_counter_search import LLMCounterSearchAgent
 from countergap.agents.no_counter_search import NoCounterSearchAblation
+from countergap.baselines.embedding_boundary import EmbeddingBoundaryBaseline
 from countergap.baselines.keyword_trend_agent import KeywordTrendBaseline
 from countergap.baselines.one_shot import OneShotBaseline
 from countergap.baselines.one_shot_llm import OneShotLLMBaseline
@@ -75,6 +76,7 @@ def main() -> None:
         "one_shot": OneShotBaseline(),
         "no_counter_search": NoCounterSearchAblation(),
         "counter_search": CounterSearchAgent(),
+        "embedding_boundary": EmbeddingBoundaryBaseline(),
     }
     if llm is not None:
         methods["one_shot_llm"] = OneShotLLMBaseline(llm=llm)
