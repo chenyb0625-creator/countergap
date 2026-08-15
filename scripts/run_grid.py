@@ -54,13 +54,16 @@ def main() -> None:
     parser.add_argument("--seeds", type=int, nargs="+", default=[42, 7, 2024, 1234, 99])
     parser.add_argument("--budget", type=int, default=16)
     parser.add_argument("--cutoff", default="2022-12-31")
+    parser.add_argument("--cutoffs", nargs="+", default=None, help="multiple cutoffs (overrides --cutoff)")
+    parser.add_argument("--corpus", type=Path, default=ROOT / "data" / "demo_corpus.jsonl")
+    parser.add_argument("--corpus-version", default="demo-v1")
     parser.add_argument("--llm", action="store_true", help="also run the two DeepSeek methods")
     args = parser.parse_args()
 
-    cutoff = date.fromisoformat(args.cutoff)
-    corpus = ROOT / "data" / "demo_corpus.jsonl"
+    cutoffs_iso = args.cutoffs or [args.cutoff]
+    corpus = args.corpus
     if not corpus.exists():
-        raise SystemExit("Run: python scripts/build_demo_corpus.py")
+        raise SystemExit(f"Corpus not found: {corpus}")
     docs = load_docs(corpus)
 
     deterministic_factories = {
@@ -74,25 +77,28 @@ def main() -> None:
 
     traces_by_method: dict[str, list[Path]] = {name: [] for name in deterministic_factories}
 
-    for seed in args.seeds:
-        for name, factory in deterministic_factories.items():
-            backend = LocalFrozenCorpusBackend(docs, cutoff=cutoff)
-            env = CounterGapEnv(backend=backend, cutoff=cutoff, action_budget=args.budget)
-            method = factory(seed=seed) if name == "random" else factory()
-            method.run(env)
-            out = write_run_trace(
-                env,
-                RunMetadata(
-                    run_id=f"grid-{name}-seed-{seed}",
-                    seed=seed,
-                    corpus_version="demo-v1",
-                    cutoff=cutoff,
-                    method_name=name,
-                    action_budget=args.budget,
-                ),
-                ROOT / "outputs" / f"grid_{name}_seed{seed}_trace.jsonl",
-            )
-            traces_by_method[name].append(out)
+    for cutoff_iso in cutoffs_iso:
+        cutoff = date.fromisoformat(cutoff_iso)
+        for seed in args.seeds:
+            for name, factory in deterministic_factories.items():
+                backend = LocalFrozenCorpusBackend(docs, cutoff=cutoff)
+                env = CounterGapEnv(backend=backend, cutoff=cutoff, action_budget=args.budget)
+                method = factory(seed=seed) if name == "random" else factory()
+                method.run(env)
+                safe_cutoff = cutoff_iso.replace("-", "")
+                out = write_run_trace(
+                    env,
+                    RunMetadata(
+                        run_id=f"grid-{name}-seed-{seed}-cutoff-{cutoff_iso}",
+                        seed=seed,
+                        corpus_version=args.corpus_version,
+                        cutoff=cutoff,
+                        method_name=name,
+                        action_budget=args.budget,
+                    ),
+                    ROOT / "outputs" / f"grid_{args.corpus_version}_{name}_seed{seed}_c{safe_cutoff}_trace.jsonl",
+                )
+                traces_by_method[name].append(out)
 
     # Reproducibility check: deterministic methods must ignore the seed value.
     # Timestamps differ by construction, so compare the semantic trace content
@@ -129,32 +135,36 @@ def main() -> None:
             llm = DeepSeekClient()
         except LLMError as error:
             raise SystemExit(f"--llm set but {error}")
-        for seed in args.seeds[:2]:
-            for name, factory in (
-                ("one_shot_llm", lambda: OneShotLLMBaseline(llm=llm)),
-                ("llm_counter_search", lambda: LLMCounterSearchAgent(llm=llm)),
-            ):
-                backend = LocalFrozenCorpusBackend(docs, cutoff=cutoff)
-                env = CounterGapEnv(backend=backend, cutoff=cutoff, action_budget=args.budget)
-                factory().run(env)
-                out = write_run_trace(
-                    env,
-                    RunMetadata(
-                        run_id=f"grid-{name}-seed-{seed}",
-                        seed=seed,
-                        corpus_version="demo-v1",
-                        cutoff=cutoff,
-                        method_name=name,
-                        action_budget=args.budget,
-                    ),
-                    ROOT / "outputs" / f"grid_{name}_seed{seed}_trace.jsonl",
-                )
-                llm_summary.setdefault(name, []).append({
-                    "seed": seed,
-                    "terminal_outcome": env.terminal_outcome.value if env.terminal_outcome else None,
-                    "steps": len(env.trace),
-                    "trace": str(out),
-                })
+        for cutoff_iso in cutoffs_iso:
+            cutoff = date.fromisoformat(cutoff_iso)
+            for seed in args.seeds[:2]:
+                for name, factory in (
+                    ("one_shot_llm", lambda: OneShotLLMBaseline(llm=llm)),
+                    ("llm_counter_search", lambda: LLMCounterSearchAgent(llm=llm)),
+                ):
+                    backend = LocalFrozenCorpusBackend(docs, cutoff=cutoff)
+                    env = CounterGapEnv(backend=backend, cutoff=cutoff, action_budget=args.budget)
+                    factory().run(env)
+                    safe_cutoff = cutoff_iso.replace("-", "")
+                    out = write_run_trace(
+                        env,
+                        RunMetadata(
+                            run_id=f"grid-{name}-seed-{seed}-cutoff-{cutoff_iso}",
+                            seed=seed,
+                            corpus_version=args.corpus_version,
+                            cutoff=cutoff,
+                            method_name=name,
+                            action_budget=args.budget,
+                        ),
+                        ROOT / "outputs" / f"grid_{args.corpus_version}_{name}_seed{seed}_c{safe_cutoff}_trace.jsonl",
+                    )
+                    llm_summary.setdefault(name, []).append({
+                        "seed": seed,
+                        "cutoff": cutoff_iso,
+                        "terminal_outcome": env.terminal_outcome.value if env.terminal_outcome else None,
+                        "steps": len(env.trace),
+                        "trace": str(out),
+                    })
         print("=== LLM multi-seed outcomes ===")
         print(json.dumps(llm_summary, ensure_ascii=False, indent=2))
 

@@ -187,6 +187,7 @@ class LLMCounterSearchAgent:
 
     # ---------------------------------------------------------------- LLM calls
     def _propose(self, env: CounterGapEnv, read_docs: list[Document]) -> None:
+        reasoning = ""
         try:
             reply = self.llm.complete(
                 SYSTEM_CORE, propose_gap_prompt(read_docs), temperature=0.3, max_tokens=512,
@@ -194,6 +195,7 @@ class LLMCounterSearchAgent:
             parsed = extract_json_object(reply)
             text = str(parsed.get("gap", "")).strip()
             evidence = [str(x) for x in parsed.get("evidence_ids", [])]
+            reasoning = str(parsed.get("reasoning", "")).strip()
         except Exception:  # noqa: BLE001 - fallback must keep the run alive
             text, evidence = "", []
         evidence = [x for x in evidence if x in env.read_ids]
@@ -205,7 +207,7 @@ class LLMCounterSearchAgent:
             )
         env.step(Action(
             type=ActionType.PROPOSE_GAP,
-            payload={"text": text, "evidence_ids": evidence},
+            payload={"text": text, "evidence_ids": evidence, "model_reasoning": reasoning},
         ))
 
     def _falsification_queries(self, read_docs: list[Document], gap_text: str) -> list[str]:
@@ -244,9 +246,15 @@ class LLMCounterSearchAgent:
         parsed = self._last_verdict
         counter_ids = [str(x) for x in parsed.get("counterevidence_ids", []) if str(x) in env.counter_read_ids]
         evidence_ids = [str(x) for x in parsed.get("evidence_ids", []) if str(x) in env.read_ids]
+        # Enforce no overlap between support and counter-evidence (env invariant).
+        counter_set = set(counter_ids)
+        evidence_ids = [x for x in evidence_ids if x not in counter_set]
         reason = str(parsed.get("reason", "")).strip()
         if not counter_ids or not reason:
             return False
+        reasoning = str(parsed.get("reasoning", "")).strip()
+        if not reasoning:
+            reasoning = reason  # fallback: use the reason field as audit text
         env.step(Action(
             type=ActionType.REVISE_GAP,
             payload={
@@ -257,6 +265,7 @@ class LLMCounterSearchAgent:
                 "revision_type": str(parsed.get("revision_type", "scope_narrowing")),
                 "trigger_document_ids": [x for x in counter_ids if x in env.counter_read_ids],
                 "changed_dimensions": [str(x) for x in parsed.get("changed_dimensions", ["scope"])],
+                "model_reasoning": reasoning,
             },
         ))
         return True
@@ -265,11 +274,18 @@ class LLMCounterSearchAgent:
         parsed = self._last_verdict
         counter_ids = [str(x) for x in parsed.get("counterevidence_ids", []) if str(x) in env.counter_read_ids]
         reason = str(parsed.get("reason", "")).strip()
+        reasoning = str(parsed.get("reasoning", "")).strip()
+        if not reasoning:
+            reasoning = reason  # fallback: use the reason field as audit text
         if not counter_ids or not reason:
             return False
         env.step(Action(
             type=ActionType.REJECT_GAP,
-            payload={"counterevidence_ids": counter_ids, "reason": reason},
+            payload={
+                "counterevidence_ids": counter_ids,
+                "reason": reason,
+                "model_reasoning": reasoning,
+            },
         ))
         return True
 

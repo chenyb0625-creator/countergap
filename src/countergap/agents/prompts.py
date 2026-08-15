@@ -78,5 +78,8 @@ def verdict_prompt(
         "evaluation_setting_change, temporal_constraint_added}, "
         '"changed_dimensions" (list of strings).\n'
         '- reject: give up the claim; provide "reason" and "counterevidence_ids".\n'
-        "All document ids must come from the lists above."
+        "All document ids must come from the lists above.\n\n"
+        'ALWAYS include a "reasoning" field (1-3 sentences) explaining WHY you '
+        "made this decision, citing the specific document ids and what they cover "
+        "or fail to cover. This is required for auditability."
     )
